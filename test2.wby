@@ -1,6 +1,6 @@
 entry: text="Write something", style=[width="30"]
 radiobutton: text="First option", style=[color="red"], options=[value=1]
-combobox: text="Choose", style=[width="20"], options=[values=Alma|Körte|Szilva]
+combobox: text="Choose", style=[width="20"], options=[values=One|Two|Three]
 listbox: text="Elem 1|Elem 2|Elem 3", style=[height="5"]
 message: text="This is a message", style=[font-size="16", color="darkgreen", padding="10"]
 \W/ message: text="This is a message which is commented", style=[font-size="16", color="darkgreen"]

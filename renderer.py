@@ -1,5 +1,5 @@
 import re
-from tkinter import ttk, Label, Button, Entry, Radiobutton, IntVar, Listbox, Scrollbar, Scale, Message, Menubutton
+from tkinter import ttk, Label, Button, Entry, Radiobutton, IntVar, Listbox, Scrollbar, Scale, Message, Menubutton, Text
 from tkinter.ttk import Progressbar
 
 def parse_style(style_str):
@@ -10,10 +10,11 @@ def parse_style(style_str):
     return style
 
 def apply_style(widget, style):
-    background_color = style.get('background-color', None)
-    if background_color:
-        widget.config(bg=background_color)
+    background_color = style.get('background-color', 'white')
 
+    if isinstance(widget, (Label, Message, Button, Text, Radiobutton)):
+        widget.config(bg=background_color)
+    
     if 'color' in style:
         widget.config(fg=style['color'])
     if 'font-size' in style:

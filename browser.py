@@ -1,5 +1,6 @@
 import os
 import socket
+import threading
 import tkinter as tk
 from tkinter import ttk
 from renderer import WBYRenderer
@@ -36,6 +37,7 @@ class Browser:
         self.history_index = -1
 
         self.renderer = WBYRenderer(self.display_area)
+        self.update_navigation_buttons()
 
     def on_return_pressed(self, event):
         url = self.url_entry.get()
@@ -48,23 +50,17 @@ class Browser:
         if url is None:
             url = self.url_entry.get()
 
+        self.display_area.delete(1.0, tk.END)
+        self.display_area.insert("1.0", "Loading...", "center")
+
         if url.startswith("wby:"):
             parts = url[4:].split("/", 1)
             if len(parts) < 2:
-                self.display_area.delete(1.0, tk.END)
-                self.display_area.insert(tk.END, "Invalid URL format. Expected format: wby:<IP>/<path>")
+                self.display_error("Invalid URL format. Expected format: wby:<IP>/<path>")
                 return
             
             ip, file_path = parts
-            file_content = self.fetch_file_from_server(ip, file_path)
-            if file_content:
-                self.display_area.delete(1.0, tk.END)
-                self.renderer.render(file_content)
-            else:
-                self.display_area.delete(1.0, tk.END)
-                self.display_area.insert(tk.END, f"File not found on server: {file_path}")
-            return
-
+            self.fetch_file_from_server(ip, file_path, self.handle_server_response)
         elif url.startswith("localwby:"):
             file_path = url.replace("localwby:", "") + ".wby"
             if os.path.exists(file_path):
@@ -73,18 +69,43 @@ class Browser:
                 self.display_area.delete(1.0, tk.END)
                 self.renderer.render(content)
             else:
-                self.display_area.delete(1.0, tk.END)
-                self.display_area.insert(tk.END, f"Local file not found: {file_path}")
-            return
+                self.display_error(f"Local file not found: {file_path}")
+        else:
+            self.display_error("Invalid protocol. Use 'localwby' for local files or 'wby' for server files.")
 
+        self.update_navigation_buttons()
+
+    def handle_server_response(self, result):
+        if result is None:
+            self.display_error("Error fetching file from server.")
+        elif result.startswith("Error"):
+            self.display_error(result)
         else:
             self.display_area.delete(1.0, tk.END)
-            self.display_area.insert(tk.END, "Invalid protocol. Use 'localwby' for local files or 'wby' for server files.")
+            self.renderer.render(result)
+
+    def display_error(self, message):
+        self.display_area.delete(1.0, tk.END)
+        self.display_area.tag_configure("center", justify="center")
+        self.display_area.tag_configure("error", foreground="red", font=("Arial", 20, "bold"))
+        self.display_area.insert("1.0", message, ("center", "error"))
 
     def update_history(self, url):
         self.history = self.history[:self.history_index + 1]
         self.history.append(url)
         self.history_index += 1
+        self.update_navigation_buttons()
+
+    def update_navigation_buttons(self):
+        if self.history_index > 0:
+            self.back_button["state"] = "normal"
+        else:
+            self.back_button["state"] = "disabled"
+
+        if self.history_index < len(self.history) - 1:
+            self.forward_button.pack(side="left", padx=5, pady=5)
+        else:
+            self.forward_button.pack_forget()
 
     def go_back(self):
         if self.history_index > 0:
@@ -104,22 +125,29 @@ class Browser:
         if self.history_index >= 0:
             self.load_page()
 
-    def fetch_file_from_server(self, ip, file_path):
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.connect((ip, 5000))
-                request = f"GET {file_path} WBY/1.0\r\n\r\n"
-                s.sendall(request.encode())
-                response = s.recv(4096).decode()
-                if response.startswith("WBY/1.0 100 SENT"):
-                    return response.split("\r\n\r\n", 1)[1]
-                self.display_area.delete(1.0, tk.END)
-                self.display_area.insert(tk.END, f"Error: File not found on server or invalid response: {response}")
-                return None
-        except Exception as e:
-            self.display_area.delete(1.0, tk.END)
-            self.display_area.insert(tk.END, f"Error fetching file from server: {e}")
-            return None
+    def fetch_file_from_server(self, ip, file_path, callback):
+        def worker():
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as test_socket:
+                    test_socket.settimeout(3)
+                    if test_socket.connect_ex((ip, 5000)) != 0:
+                        callback(f"Error: Target server {ip} is not reachable.")
+                        return
+
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.connect((ip, 5000))
+                    request = f"GET {file_path} WBY/1.0\r\n\r\n"
+                    s.sendall(request.encode())
+                    response = s.recv(4096).decode()
+                    if response.startswith("WBY/1.0 100 SENT"):
+                        content = response.split("\r\n\r\n", 1)[1]
+                        callback(content)
+                    else:
+                        callback(f"Error: File not found on server or invalid response: {response}")
+            except Exception as e:
+                callback(f"Error fetching file from server: {e}")
+
+        threading.Thread(target=worker, daemon=True).start()
 
 if __name__ == "__main__":
     root = tk.Tk()
